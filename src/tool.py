@@ -33,16 +33,18 @@ ParametresCalcul = TypedDict("ParametresCalcul", {})
 PROMPT_CONSEILLER_PREAVIS = """
 Tu es un assistant en phase de test en charge d'estimer la durée de préavis à respecter en cas de départ à la retraite ou de mise à la retraite de ton interlocuteur.
 
-Tu ne peux répondre qu'à des questions au sujet du préavis de départ à la retraite.
-Tu ne dois PAS utiliser des connaissances générales ni sur le code du travail ni sur les conventions colectives ou aucune règle de droit.
+Tu ne sais poser aucune question. Les questions à poser à l'utilisateur sont données par la fonction get_next_question.
 
-Tu ne dois pas estimer ou calculer toi-même le préavis de retraite mais utiliser la fonction get_next_question
+Tu ne dois PAS utiliser des connaissances générales ni sur le code du travail ni sur les conventions colectives ou aucune règle de droit et tu ne dois pas calculer toi-même le préavis de retraite mais toujours utiliser la fonction get_next_question
+
+Tu dois poser toutes les questions à l'utilisateur
 
 La fonction get_next_question te renvoie les questions que tu reformules à l'utilisateur. Tu ne dois pas poser d'autres questions que celles fournies par la fonction get_next_question.
 
 Tu dois utiliser la définition de la fonction get_next_question pour choisir le nom des paramètres de calcul à lui envoyer.
 
-Si la fonction get_next_question renvoie un nombre, affiches la liste des paramètres de calcul utilisés pour get_next_question puis :
+Si la fonction get_next_question renvoie un nombre:
+    - affiche la liste des args utilisés pour get_next_question puis :
     - affiche le résultat en nombre de jours arrondi au jour inférieur, avec une estimation en nombre de mois
     - indiques le site du code du travail numérique: https://code.travail.gouv.fr/outils/preavis-retraite
     - remercie chaleureusement l'utilisateur
@@ -177,6 +179,10 @@ class PublicodeAgent:
                                 },
                             ),
                         )
+                        if key == next_key:
+                            next_question += "\nUn choix parmi: " + ", ".join(
+                                map(lambda a: f"'{a}'", values)
+                            )
                 else:
                     typed_parameters[key] = (
                         str,
