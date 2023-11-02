@@ -1,6 +1,7 @@
 # encoding: utf-8
 
 import logging
+import re
 import os
 import sys
 import openai
@@ -8,11 +9,13 @@ from llama_index.agent import OpenAIAgent
 from llama_index.tools.function_tool import FunctionTool
 from llama_index.tools.types import ToolMetadata
 
-from typing import TypedDict, Required
+from typing import TypedDict
 
 from pydantic.v1 import create_model, Field
 
 from publicodes import get_rule, map_value, evaluate
+
+from kali import convention_collective_query_engine
 
 if os.getenv("OPENAI_URL"):
     openai.api_base = os.getenv("OPENAI_URL")
@@ -45,7 +48,7 @@ def toUnderscoreKey(key):
 PROMPT_CONSEILLER_PREAVIS = """
 Tu es un assistant en phase de test en charge d'estimer la durée de préavis à respecter en cas de départ à la retraite ou de mise à la retraite de ton interlocuteur.
 
-Tu ne sais poser aucune question. Les questions à poser à l'utilisateur sont données par la fonction get_next_question.
+Tu ne sais poser aucune question. Les questions à poser à l'utilisateur sont données par la fonction get_next_question ou par la fonction get_convention_collective
 
 Tu ne dois PAS utiliser des connaissances générales ni sur le code du travail ni sur les conventions colectives ou aucune règle de droit et tu ne dois pas calculer toi-même le préavis de retraite mais toujours utiliser la fonction get_next_question
 
@@ -60,7 +63,28 @@ Si la fonction get_next_question renvoie un nombre:
     - affiche le résultat en nombre de jours arrondi au jour inférieur, avec une estimation en nombre de mois
     - indiques le site du code du travail numérique: https://code.travail.gouv.fr/outils/preavis-retraite
     - remercie chaleureusement l'utilisateur
+
+Si une fonction t'envoie un message commencant par "Assistant:", tu dois prendre en compte ses instructions
 """
+
+
+def get_convention_collective(query: str):
+    """Pour choisir une convention collective. Si plusieurs choix possibles, il faut demander à l'utilisateur de choisir le bon ID dans la liste"""
+    response = convention_collective_query_engine.query(
+        f'Quelles sont les conventions collectives liées à "{query}" ? Renvoies une liste des IDCC et le titre simplifié'
+    )
+    results = re.findall(r"(\d+),(.*)", str(response))
+    if re.match("IDCC\\d+", query):
+        return query
+    if len(results) == 1:
+        return f"IDCC{results[0][0]}"
+    elif len(results) > 1:
+        message = "Assistant: l'utilisateur doit choisir  parmi:\n" + "\n".join(
+            map(lambda a: f" - IDCC{a[0]}: {a[1]}", results)
+        )
+        print(message)
+        return f"{message}"
+    return None
 
 
 def update_tool(fn, fields: dict):
@@ -115,9 +139,12 @@ class PublicodeAgent:
                 ),
             },
         )
-
+        get_convention_collective_tool = FunctionTool.from_defaults(
+            fn=get_convention_collective,
+            description="A utiliser pour identifier une convention collective",
+        )
         self.agent = OpenAIAgent.from_tools(
-            [self.get_next_question_tool],
+            [self.get_next_question_tool, get_convention_collective_tool],
             verbose=True,
             system_prompt=PROMPT_CONSEILLER_PREAVIS,
             # llm=OpenAI(
@@ -231,7 +258,7 @@ class PublicodeAgent:
                     )
                     self.agent._tools[i] = update_tool(self.get_next_question, params)
 
-            return f'Assistant, demande à l\'utilisateur : "{next_question}"'
+            return f'Assistant: demande à l\'utilisateur : "{next_question}"'
         elif result:
             return result
         return None
