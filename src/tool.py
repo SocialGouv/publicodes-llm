@@ -1,7 +1,9 @@
 # encoding: utf-8
 
 import logging
+import re
 import os
+import sys
 import openai
 from llama_index.agent import OpenAIAgent
 from llama_index.tools.function_tool import FunctionTool
@@ -13,11 +15,13 @@ from pydantic.v1 import create_model, Field
 
 from publicodes import get_rule, map_value, evaluate
 
+from kali import convention_collective_query_engine
+
 if os.getenv("OPENAI_URL"):
     openai.api_base = os.getenv("OPENAI_URL")
     openai.verify_ssl_certs = False
 
-# logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
 
 logger = logging.getLogger()
@@ -27,40 +31,76 @@ logger = logging.getLogger()
 # logger.addHandler(handler)
 
 
-ParametresCalcul = TypedDict("ParametresCalcul", {})
+ParametresCalcul = TypedDict(
+    "ParametresCalcul",
+    {},
+)
+
+
+def toPublicodeKey(key):
+    return key.replace("______", " . ").replace("___", " ")
+
+
+def toUnderscoreKey(key):
+    return key.replace(" . ", "______").replace(" ", "___")
 
 
 PROMPT_CONSEILLER_PREAVIS = """
 Tu es un assistant en phase de test en charge d'estimer la durée de préavis à respecter en cas de départ à la retraite ou de mise à la retraite de ton interlocuteur.
 
-Tu ne peux répondre qu'à des questions au sujet du préavis de départ à la retraite.
-Tu ne dois PAS utiliser des connaissances générales ni sur le code du travail ni sur les conventions colectives ou aucune règle de droit.
+Tu ne sais poser aucune question. Les questions à poser à l'utilisateur sont données par la fonction get_next_question ou par la fonction get_convention_collective
 
-Tu ne dois pas estimer ou calculer toi-même le préavis de retraite mais utiliser la fonction get_next_question
+Tu ne dois PAS utiliser des connaissances générales ni sur le code du travail ni sur les conventions colectives ou aucune règle de droit et tu ne dois pas calculer toi-même le préavis de retraite mais toujours utiliser la fonction get_next_question
+
+Tu dois poser toutes les questions à l'utilisateur.
 
 La fonction get_next_question te renvoie les questions que tu reformules à l'utilisateur. Tu ne dois pas poser d'autres questions que celles fournies par la fonction get_next_question.
 
-Tu dois utiliser la définition de la fonction get_next_question pour choisir le nom des paramètres de calcul à lui envoyer.
+Respectes bien la définition de la fonction get_next_question pour choisir le nom des paramètres de calcul à lui envoyer.
 
-Si la fonction get_next_question renvoie un nombre, affiches la liste des paramètres de calcul utilisés pour get_next_question puis :
+Si la fonction get_next_question renvoie un nombre:
+    - affiche la liste des args utilisés pour get_next_question puis :
     - affiche le résultat en nombre de jours arrondi au jour inférieur, avec une estimation en nombre de mois
     - indiques le site du code du travail numérique: https://code.travail.gouv.fr/outils/preavis-retraite
     - remercie chaleureusement l'utilisateur
+
+Si une fonction t'envoie un message commencant par "Assistant:", tu dois prendre en compte ses instructions
 """
+
+
+def get_convention_collective(query: str):
+    """Pour choisir une convention collective. Si plusieurs choix possibles, il faut demander à l'utilisateur de choisir le bon ID dans la liste"""
+    response = convention_collective_query_engine.query(
+        f'Quelles sont les conventions collectives liées à "{query}" ? Renvoies une liste des IDCC et le titre simplifié'
+    )
+    results = re.findall(r"(\d+),(.*)", str(response))
+    if re.match("IDCC\\d+", query):
+        return query
+    if len(results) == 1:
+        return f"IDCC{results[0][0]}"
+    elif len(results) > 1:
+        message = (
+            "Assistant: Pour choisir sa convention collective, l'utilisateur doit choisir  parmi:\n"
+            + "\n".join(map(lambda a: f" - IDCC{a[0]}: {a[1]}", results))
+        )
+        print(message)
+        return f"{message}"
+    return None
 
 
 def update_tool(fn, fields: dict):
     """create a tool with custom fields schema"""
+    print("fields")
+    print(fields)
     name = fn.__name__
     docstring = fn.__doc__ or name
-    description = docstring
     fn_schema = create_model(
         name,
         **fields,
     )
-    tool_metadata = ToolMetadata(
-        name=name, description=description, fn_schema=fn_schema
-    )
+    tool_metadata = ToolMetadata(name=name, description=docstring, fn_schema=fn_schema)
+    logging.debug(f"set schema for {name}")
+    logging.debug(str(fn_schema.schema()))
     return FunctionTool(fn=fn, metadata=tool_metadata)
 
 
@@ -83,10 +123,29 @@ class PublicodeAgent:
     def __init__(
         self,
     ):
-        self.get_next_question_tool = update_tool(self.get_next_question, dict())
+        self.init_agent()
 
+    def init_agent(self):
+        # initialize the agent with some optional inputs
+        self.get_next_question_tool = update_tool(
+            self.get_next_question,
+            fields={
+                "contrat___salarié______ancienneté": Field(
+                    0,
+                    description="Ancienneté du salarié en mois",
+                ),
+                "contrat___salarié______travailleur___handicapé": Field(
+                    False,
+                    description="Le salarié est-il reconnu en tant que travail handicapé",
+                ),
+            },
+        )
+        get_convention_collective_tool = FunctionTool.from_defaults(
+            fn=get_convention_collective,
+            description="A utiliser pour identifier une convention collective",
+        )
         self.agent = OpenAIAgent.from_tools(
-            [self.get_next_question_tool],
+            [self.get_next_question_tool, get_convention_collective_tool],
             verbose=True,
             system_prompt=PROMPT_CONSEILLER_PREAVIS,
             # llm=OpenAI(
@@ -94,6 +153,7 @@ class PublicodeAgent:
             #     temperature=0.1,
             #     # openai_proxy="http://127.0.0.1:8084",
             # ),
+            # )
         )
 
     def chat(self, *args, **kwargs):
@@ -108,12 +168,16 @@ class PublicodeAgent:
     def get_next_question(self, **parametres_calcul: ParametresCalcul) -> str | None:
         """
         Pour calculer le préavis de retraite. renvoie une question à poser à l'utilisateur ou un résultat en jours.
+
+        Si je renvoie "None", ne pas donner de réponse à l'utilisateur
         """
 
-        logger.debug("get_next_question", parametres_calcul or {})
+        logger.debug("get_next_question")
+        logger.debug(parametres_calcul or {})
 
         situation_publicodes = {
-            key: map_value(value) for (key, value) in parametres_calcul.items()
+            toPublicodeKey(key): map_value(value)
+            for (key, value) in parametres_calcul.items()
         }
 
         logger.debug("⚙️ publicodes")
@@ -138,12 +202,12 @@ class PublicodeAgent:
                 description = rule.get("rawNode").get("question")
                 node_type = rule.get("rawNode").get("cdtn", {}).get("type")
                 if node_type == "oui-non":
-                    typed_parameters[key] = (
+                    typed_parameters[toUnderscoreKey(key)] = (
                         bool,
                         Field(description=description),
                     )
                 elif node_type == "entier":
-                    typed_parameters[key] = (
+                    typed_parameters[toUnderscoreKey(key)] = (
                         int,
                         Field(description=description),
                     )
@@ -158,14 +222,14 @@ class PublicodeAgent:
                         )
                     )
                     if "oui" in values and "non" in values and len(values) == 2:
-                        typed_parameters[key] = (
+                        typed_parameters[toUnderscoreKey(key)] = (
                             bool,
                             Field(
                                 description=description,
                             ),
                         )
                     else:
-                        typed_parameters[key] = (
+                        typed_parameters[toUnderscoreKey(key)] = (
                             str,  # todo: use typing unions from strings
                             Field(
                                 description=description
@@ -177,40 +241,28 @@ class PublicodeAgent:
                                 },
                             ),
                         )
+                        if key == next_key:
+                            next_question += "\nUn choix parmi: " + ", ".join(
+                                map(lambda a: f"'{a}'", values)
+                            )
                 else:
-                    typed_parameters[key] = (
+                    typed_parameters[toUnderscoreKey(key)] = (
                         str,
                         Field(description=description),
                     )
             # necessary to monkey patch the tool signatures at the moment
             for i, tool in enumerate(self.agent._tools):
-                print("metadata", tool.metadata.name)
                 if tool.metadata.name == "get_next_question":
-                    print("update tool", tool.metadata.name, typed_parameters)
-                    self.agent._tools[i] = update_tool(
-                        self.get_next_question, typed_parameters
+                    params = typed_parameters or {}
+                    logger.debug(
+                        f"update tool {tool.metadata.name} with params: {params}"
                     )
+                    self.agent._tools[i] = update_tool(self.get_next_question, params)
 
-            return next_question
+            return f'Assistant: demande à l\'utilisateur : "{next_question}"'
         elif result:
             return result
         return None
-
-
-# get_next_question_tool = update_tool(get_next_question, dict())
-
-# from llama_index.llms import OpenAI
-
-# agent = OpenAIAgent.from_tools(
-#     [get_next_question_tool],
-#     verbose=True,
-#     system_prompt=PROMPT_CONSEILLER_PREAVIS,
-#     # llm=OpenAI(
-#     #     model="gpt-3.5-turbo-0613",
-#     #     temperature=0.1,
-#     #     # openai_proxy="http://127.0.0.1:8084",
-#     # ),
-# )
 
 
 if __name__ == "__main__":

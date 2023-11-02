@@ -35,7 +35,9 @@ Interrogez le modèle publicodes de calcul de préavis de retraite (expérimenta
 
 Si on vous demande la convention collective, répondre IDCC1979 ou IDCC1043 par exemple (WIP)
 
-Exemple : Quel est mon préavis de retraite ?
+Exemple : 
+ - Quel est mon préavis de retraite ?
+ - Quel est le préavis de retraite pour un travailleur handicapé avec 5 ans d'ancienneté ?
 
 Les détails [sur GitHub](https://github.com/SocialGouv/publicodes-llm)""".format(),
     icon="💡",

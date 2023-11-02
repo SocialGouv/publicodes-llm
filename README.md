@@ -46,5 +46,3 @@ La variable d'environnement `OPENAI_URL` permet de forcer le passage par votre p
 
 - detection/validation de CC
 - improve parameters matching/validation
-- gestion initialisation des parametres
-- lister les choix possibles quand il y des enums
