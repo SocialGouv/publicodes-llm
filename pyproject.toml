@@ -8,7 +8,7 @@ authors = ["Julien Bouquillon <julien.bouquillon@sg.social.gouv.fr>"]
 python = "^3.10"
 llama-index = "^0.8.40"
 llama-cpp-python = "^0.2.11"
-transformers = "^4.34.0"
+transformers = {extras = ["torch"], version = "^4.34.1"}
 torch = "^2.1.0"
 accelerate = "^0.23.0"
 safetensors = "^0.4.0"

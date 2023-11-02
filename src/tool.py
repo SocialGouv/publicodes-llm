@@ -79,8 +79,9 @@ def get_convention_collective(query: str):
     if len(results) == 1:
         return f"IDCC{results[0][0]}"
     elif len(results) > 1:
-        message = "Assistant: l'utilisateur doit choisir  parmi:\n" + "\n".join(
-            map(lambda a: f" - IDCC{a[0]}: {a[1]}", results)
+        message = (
+            "Assistant: Pour choisir sa convention collective, l'utilisateur doit choisir  parmi:\n"
+            + "\n".join(map(lambda a: f" - IDCC{a[0]}: {a[1]}", results))
         )
         print(message)
         return f"{message}"

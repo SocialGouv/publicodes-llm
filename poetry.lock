@@ -2896,6 +2896,7 @@ files = [
 ]
 
 [package.dependencies]
+accelerate = {version = ">=0.20.3", optional = true, markers = "extra == \"torch\""}
 filelock = "*"
 huggingface-hub = ">=0.16.4,<1.0"
 numpy = ">=1.17"
@@ -2905,6 +2906,7 @@ regex = "!=2019.12.17"
 requests = "*"
 safetensors = ">=0.3.1"
 tokenizers = ">=0.14,<0.15"
+torch = {version = ">=1.10,<1.12.0 || >1.12.0", optional = true, markers = "extra == \"torch\""}
 tqdm = ">=4.27"
 
 [package.extras]
@@ -3225,4 +3227,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "fb0720cf951230aff6a2852d721ac019be82564a2414aedf7a9ca261a3d19807"
+content-hash = "00f50cf483f4bb27058fa2988dbc190febb6a9e9f454c9f2108dc6208204c90c"
