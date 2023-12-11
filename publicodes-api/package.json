@@ -8,7 +8,7 @@
     "start": "node index"
   },
   "dependencies": {
-    "@koa/cors": "^4.0.0",
+    "@koa/cors": "^5.0.0",
     "@koa/router": "^11.0.2",
     "@publicodes/api": "^1.0.0-beta.77",
     "koa": "^2.14.2",
