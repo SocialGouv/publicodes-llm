@@ -9,7 +9,7 @@
   "devDependencies": {
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
-    "@tsconfig/node18": "2.0.1",
+    "@tsconfig/node18": "18.2.2",
     "@types/node": "^20",
     "@types/nodemon": "1.19.4",
     "@types/shelljs": "0.8.12",
