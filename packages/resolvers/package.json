@@ -16,13 +16,13 @@
     "@typescript-eslint/eslint-plugin": "5.62.0",
     "@typescript-eslint/parser": "5.62.0",
     "concurrently": "7.6.0",
-    "esbuild": "0.18.4",
-    "eslint": "8.52.0",
+    "esbuild": "0.19.11",
+    "eslint": "8.56.0",
     "eslint-config-prettier": "8.10.0",
     "nodemon": "2.0.22",
     "prettier": "2.8.8",
     "shelljs": "0.8.5",
-    "typescript": "5.2.2"
+    "typescript": "5.3.3"
   },
   "dependencies": {
     "fuzzysort": "^2.0.4",
